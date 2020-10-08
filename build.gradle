@@ -1,0 +1,370 @@
+import static groovyx.gpars.GParsPool.withPool
+import groovyx.gpars.GParsPool
+import java.nio.file.Path
+import java.nio.file.Paths
+
+buildscript {
+    repositories {
+        jcenter()
+    }
+
+    dependencies {
+        classpath "org.codehaus.gpars:gpars:1.1.0"
+    }
+}
+apply plugin: 'java-library'
+apply plugin: 'java'
+
+// In this section you declare where to find the dependencies of your project
+repositories {
+    // Use jcenter for resolving your dependencies.
+   
+    jcenter()
+}
+configurations {
+    cucumberRuntime.extendsFrom testRuntime
+}
+dependencies {
+
+compile group: 'org.codehaus.gpars', name: 'gpars', version: '1.2.1'
+
+compile group: 'org.codehaus.jsr166-mirror', name: 'jsr166y', version: '1.7.0'
+
+compile group: 'org.seleniumhq.selenium', name: 'selenium-support', version: '2.0a7'
+
+compile group: 'org.seleniumhq.selenium', name: 'selenium-chrome-driver', version: '3.0.1'
+
+compile group: 'org.seleniumhq.selenium', name: 'selenium-java', version: '2.41.0'
+
+compile group: 'org.seleniumhq.selenium', name: 'selenium-api', version: '3.11.0'
+compile group: 'org.seleniumhq.selenium', name: 'selenium-server-standalone', version: '2.53.0'
+
+compile group: 'org.apache.poi', name: 'poi', version: '4.0.1'
+compile group: 'org.apache.poi', name: 'poi-ooxml-schemas', version: '4.0.1'
+//compile group: 'org.apache.poi', name: 'ooxml-schemas', version: '4.0.1'
+compile group: 'org.apache.poi', name: 'poi-ooxml', version: '4.0.1'
+
+compile group: 'commons-collections', name: 'commons-collections', version: '3.2.1'
+
+compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.8'
+
+compile group: 'io.cucumber', name: 'cucumber-java', version: '2.3.1'
+
+compile group: 'io.cucumber', name: 'gherkin-jvm-deps', version: '1.0.6'
+
+compile group: 'io.cucumber', name: 'cucumber-testng', version: '2.3.1'
+
+compile group: 'io.cucumber', name: 'cucumber-core', version: '2.3.1'
+compile group: 'net.masterthought', name: 'cucumber-sandwich', version: '3.7.0'
+
+//compile group: 'org.htmlcleaner', name: 'htmlcleaner', version: '1.0'
+
+compile group: 'com.opencsv', name: 'opencsv', version: '4.6'
+
+compile group: 'org.apache.xmlbeans', name: 'xmlbeans', version: '2.6.0'
+
+compile group: 'com.googlecode.json-simple', name: 'json-simple', version: '1.1.1'
+
+    // This dependency is exported to consumers, that is to say found on their compile classpath.
+    api 'org.apache.commons:commons-math3:3.6.1'
+
+    // This dependency is used internally, and not exposed to consumers on their own compile classpath.
+    implementation 'com.google.guava:guava:23.0'
+
+    // Use JUnit test framework
+    testImplementation 'junit:junit:4.12'
+}
+
+
+//======================================================================
+// General Functions For Report Related tasks
+//======================================================================
+
+
+def getDateAndTime() {
+def date= new Date()
+def formattedDate = date.format('ddMMyyyyHHmmss')
+return formattedDate
+}
+def getDate() {
+def date = new Date()
+def formattedDate = date.format('yyyyMMdd')
+return formattedDate
+}
+task prepareDirs {
+doLast{
+mkdir ProjectLocation+"/.archive/"+getDate()
+}
+}
+task reRunPrepareDirs {
+doLast{
+mkdir ProjectLocation+"/.archive/"+getDate()
+}
+}
+task archiveReport(type: Zip) {
+from (ProjectLocation+"/common/test-results/")
+outputs.upToDateWhen { false }
+include '**/*'
+archiveName="Reports"+getDateAndTime()+".zip"
+destinationDir=file(ProjectLocation+"/.archive/"+getDate())
+}
+//================================================================================================
+//This section is for Cucumber Parallel Test Executions
+//Properties required to be passed are
+//maxParallelFork
+//Properties that are optional to pass
+//enableCucumberJUnitReport
+//cucumberTags
+//cucumberGlue
+//====================================================================================
+File cucumberReportsDir = new File(ProjectLocation+"/build", "cucumber")
+String getFeatureNameFromFile(File file, SourceSet sourceSet) {
+String featureName = file.name
+sourceSet.resources.srcDirs.each { File resourceDir ->
+if (isFileChildOfDirectory(file, resourceDir)){
+String featureFileName = getReleativePath(file, resourceDir).toString()
+featureName = featureFileName. substring(0, featureFileName.lastIndexOf(".")).replace(File.separator,'.')
+}
+}
+return featureName
+}
+
+boolean isFileChildOfDirectory(File file, File dir) {
+Path child = Paths.get(file.toURI())
+Path parent = Paths.get(dir.toURI())
+return child.startsWith(parent)
+}
+
+
+Path getReleativePath(File file, File dir) {
+return Paths.get(dir.toURI()).relativize(Paths.get(file.toURI()))
+}
+
+private void runCucumberTestFunc(int parallelFork, boolean enableJUnitReport, FileTree features, File cucumberReportsDir, int retryCounter){
+println "${parallelFork}"
+println "${features}"
+features.visit { FileVisitDetails details -> println "${details}"}
+
+def feat = fileTree(dir: ProjectLocation+"/src/main/resources/com/ms/features/").include '**/*.feature'
+    withPool(10) {
+        feat.eachParallel { File file ->
+        println "${file.name}"
+}
+}
+ GParsPool.withPool(10){
+features.eachParallel {File file -> 
+println "${file.name}"
+}
+}
+
+GParsPool.withPool(parallelFork){
+features.eachParallel {
+File featureFile ->
+//Calculating feature file name
+String featureName = getFeatureNameFromFile(featureFile, sourceSets.main)
+println "Started ${featureName}"
+//Creating json report path
+// File jsonReport = new File(cucumberReportsDir,"json/${featureName). ${retryCounter}.json")
+File jsonReport = new File(cucumberReportsDir,"json/${retryCounter}/${featureName}.json")
+//Adding plugin to the args
+List<String> myArgs = new ArrayList<String>()
+myArgs.add('--plugin')
+myArgs.add('pretty')
+myArgs.add('--add-plugin')
+myArgs.add('json:'+jsonReport.absolutePath)
+if(enableJUnitReport){
+logger.debug("Will create junit report")
+//Creating junit report path (this would be required for teamcity)
+File junitReport = new File(cucumberReportsDir,"junit/${featureName}.${retryCounter}.xml")
+myArgs.add('--add-plugin')
+myArgs.add('junit:'+junitReport.absolutePath)
+}
+File csvReport = new File(cucumberReportsDir,"csv/${featureName}.${retryCounter}.csv")
+//myArgs.add('--add-plugin')
+//myArgs.add('com.ms.cucumber.plugin.MSCSVReporter: '+csvReport.absolutePath)
+myArgs. add('--add-plugin')
+myArgs.add('com.cucumber.MSChromeDriverServiceHandler:true')
+
+File reRunReport=new File(cucumberReportsDir,"Rerun/${featureName}.${retryCounter}.txt")
+myArgs.add('--add-plugin')
+myArgs.add ('rerun:'+reRunReport.absolutePath)
+
+//Setting monochrome
+myArgs.add('-m')
+//Setting tags if required
+if(project.hasProperty('cucumberTags')){
+logger.debug( "Inside Tags")
+myArgs.add('--tags')
+myArgs.add(cucumberTags)
+}else{
+logger.debug("No Cucumber tags")
+}
+//Setting glue code
+myArgs.add('--glue')
+if(project.hasProperty('cucumberGlue')){
+myArgs.add(cucumberGlue)
+}else{
+myArgs.add('com.Stepdefinitions')
+}
+if(retryCounter== 0){
+myArgs.add(featureFile.absolutePath)
+}else{
+File rerunReportLocation = new File(cucumberReportsDir,"Rerun/${featureName}.${retryCounter-1}.txt")
+myArgs.add("@"+rerunReportLocation.absolutePath)
+}
+File outputFile = new File(cucumberReportsDir,"consoleOut/${featureName}.log")
+logger.debug("Args are :: ${myArgs.toString()}")
+logger.debug("Args are :: ${myArgs.toString()}")
+outputFile.getParentFile().mkdirs()
+def cucumberOutputStream = new FileOutputStream(outputFile)
+def cucumberArgs = myArgs.toArray()
+javaexec {
+main="cucumber.api.cli.Main"
+classpath = configurations.cucumberRuntime+sourceSets.main.output + sourceSets.main.resources
+args=myArgs
+standardOutput = cucumberOutputStream
+errorOutput = cucumberOutputStream
+ignoreExitValue=true
+systemProperties["webdriver.chrome.driver"]="//////c/cucumber/chromedriver.exe"
+}
+cucumberOutputStream.close()
+
+}
+}
+}
+
+//task executePROG{
+//javaexec {
+//main="cucumber.api.cli.Main"
+//classpath = configurations.cucumberRuntime+sourceSets.main.output + sourceSets.main.resources
+//args= ['--plugin', 'json', '--glue', 'com.Stepdefinitions', 'src/main/resources/com/ms/features']
+//ignoreExitValue=true
+//systemProperties["webdriver.chrome.driver"]="//////c//cucumber//chromedriver.exe"
+//}
+//}
+
+task runCucumberInParallel(){
+
+outputs.dir(cucumberReportsDir)
+outputs.upToDateWhen { false }
+def features = null
+int parallelFork = 1
+int reRunCount = 1
+def enableCucumberJUnitReport='false'
+doFirst{
+if(!project.hasProperty ("maxParallelFork")){
+println "Inside project doesn't have maxParallelFork"
+parallelFork = 1
+}else{
+println "Found maxParallelFork"
+int parallelForkTemp = maxParallelFork as Integer
+println "${parallelForkTemp}"
+parallelFork = parallelForkTemp >= 1 ? parallelForkTemp : 1
+println "${parallelFork}"
+}
+logger.debug("Checking JUnit")
+if(!project.hasProperty("enableCucumberJUnitReport")){
+enableCucumberJUnitReport='false'
+}
+logger.debug("getting feature files list")
+features = fileTree(ProjectLocation+"/src/main/resources/com/ms/features/").include '**/*.feature'
+features.each( { File file -> logger. debug (file.name) })
+
+}
+doLast{
+if (!project.hasProperty("maxReRunCount")){
+println "no provision for re run"
+reRunCount = 1
+}
+else{
+println "Found reRunCount"
+int reRunCountTemp = maxReRunCount as Integer
+println "${reRunCountTemp}"
+reRunCount = reRunCountTemp >=1? reRunCountTemp :1
+println "${reRunCount}"
+}
+for (int i =0; i < reRunCount/* Replace this with rerun Count*/;i++){
+
+runCucumberTestFunc(parallelFork,enableCucumberJUnitReport.toBoolean(), features,cucumberReportsDir,i)
+ }
+ }
+ }
+ 
+ 
+task cucumberSandwichReport() {
+outputs.upToDateWhen { false }
+
+outputs.dir(ProjectLocation+"/common/test-results")
+def sandwichHtml = ProjectLocation+"/common/test-results/"
+def jsonReport = ProjectLocation+"/build"+'/cucumber/json/'
+int reRunCount=1
+doFirst {
+if(!project.hasProperty("maxReRunCount")){
+println "no provision for re run"
+reRunCount = 1
+}else{
+println "Found reRunCount"
+int reRunCountTemp = maxReRunCount as Integer
+println "${reRunCountTemp}"
+reRunCount = reRunCountTemp >= 1 ? reRunCountTemp : 1
+println "${reRunCount}"
+}
+for (int i = 0; i < reRunCount; i++) {
+jsonReport=jsonReport+ "/" + i +"/"
+sandwichHtml = sandwichHtml + "/" + i
+javaexec {
+main = "net.masterthought.cucumber.sandwich.CucumberReportMonitor"
+classpath = configurations.runtime + sourceSets.main.output + sourceSets.main.resources
+args = ['-n', '-f', jsonReport, '-o', sandwichHtml]
+}
+jsonReport=ProjectLocation+'/build/cucumber/json/'
+sandwichHtml = ProjectLocation+"/common/test-results/"
+} }
+}
+//================================================================================================================
+//End of Cucumber Test Execution Section
+//===========================================================================================================
+task clearChromeDriverAndChrome (type: Exec){
+commandLine 'cmd', '/c', 'taskkill /F /IM chrome*"'
+ignoreExitValue = true
+}
+
+//==================================================================================================================
+//Copy Reports to Shared Path
+//=====================================================================================================================
+
+task createSharedPathDirWithDate {
+doLast {
+mkdir sharedReportPath+getDate()
+}
+}
+
+task copyReportSharedPath(type: Copy) {
+outputs.upToDateWhen { false }
+dependsOn createSharedPathDirWithDate
+dependsOn cucumberSandwichReport
+onlyIf { project.hasProperty('sharedReportPath') }
+from fileTree(ProjectLocation+"/install/common/test-results/")
+into "${sharedReportPath}${getDate()}/cucumber-html-reports_${getDateAndTime()}"
+}
+
+gradle.taskGraph.whenReady {taskGraph ->
+println "Found task graph: " + taskGraph
+println "Found "+ taskGraph.allTasks.size() + " tasks"
+taskGraph.allTasks.forEach { task ->
+println task
+task.dependsOn.forEach{dep ->
+println " - " + dep
+}
+}
+}
+//uninstall.doFirst { tasks.archiveReport.execute() }
+
+
+runCucumberInParallel.finalizedBy cucumberSandwichReport
+runCucumberInParallel.finalizedBy copyReportSharedPath
+//cucumberSandwichReport.dependsOn 'clearChromeDriverAndChrome'
+cucumberSandwichReport.dependsOn 'archiveReport'
+//archiveReport.dependsOn 'prepareDirs'
+
+ 
