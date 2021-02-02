@@ -41,7 +41,7 @@ public class BasePage {
 	public static void initializeDriver() {
 		try {
 			System.out.println("Launching Chrome browser");
-			System.setProperty("webdriver.chrome.driver", "C:\\Cucumber\\chromedriver.exe");
+			System.setProperty("webdriver.chrome.driver", System.getProperty("user.dir") + "/src//main//resources//" + "chromedriver.exe");
 			DesiredCapabilities capabilities = DesiredCapabilities.chrome();
 			capabilities.setCapability("chrome.switches", Arrays.asList("--ignore-certificate-errors"));
 			ChromeOptions options = new ChromeOptions();
